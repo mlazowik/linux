@@ -868,12 +868,22 @@ EXPORT_SYMBOL_GPL(task_user_regset_view);
 #endif
 
 static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_syscall_args *args) {
-	printk("Got run syscall ptrace instruction for process %d\n", target->pid);
-	printk("\tsyscall nr: %d\n", args->nr);
+	bool seized = target->ptrace & PT_SEIZED;
+
+	if (args == NULL) {
+		return EFAULT;
+	}
 
 	if (args->arch != AUDIT_ARCH_X86_64) {
 		return EINVAL;
 	}
+
+	if (!seized) {
+		return ESRCH;
+	}
+
+	printk("Got run syscall ptrace instruction for process %d\n", target->pid);
+	printk("\tsyscall nr: %d\n", args->nr);
 
 	args->res = -1;
 
