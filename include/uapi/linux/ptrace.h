@@ -23,6 +23,15 @@
 
 #define PTRACE_SYSCALL		  24
 
+#define PTRACE_RUN_SYSCALL	  42
+
+struct ptrace_run_syscall_args {
+	int nr;
+	uint32_t arch;
+	uint64_t args[6];
+	uint64_t res;
+};
+
 /* 0x4200-0x4300 are reserved for architecture-independent additions.  */
 #define PTRACE_SETOPTIONS	0x4200
 #define PTRACE_GETEVENTMSG	0x4201

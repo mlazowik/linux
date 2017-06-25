@@ -867,6 +867,19 @@ static int ptrace_regset(struct task_struct *task, int req, unsigned int type,
 EXPORT_SYMBOL_GPL(task_user_regset_view);
 #endif
 
+static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_syscall_args *args) {
+	printk("Got run syscall ptrace instruction for process %d\n", target->pid);
+	printk("\tsyscall nr: %d\n", args->nr);
+
+	if (args->arch != AUDIT_ARCH_X86_64) {
+		return EINVAL;
+	}
+
+	args->res = -1;
+
+	return 0;
+}
+
 int ptrace_request(struct task_struct *child, long request,
 		   unsigned long addr, unsigned long data)
 {
@@ -1078,6 +1091,12 @@ int ptrace_request(struct task_struct *child, long request,
 	case PTRACE_SECCOMP_GET_FILTER:
 		ret = seccomp_get_filter(child, addr, datavp);
 		break;
+
+#ifdef PTRACE_RUN_SYSCALL
+	case PTRACE_RUN_SYSCALL:
+		ret = ptrace_run_syscall(child, (struct ptrace_run_syscall_args *)data);
+		break;
+#endif
 
 	default:
 		break;
