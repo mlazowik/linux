@@ -129,10 +129,13 @@ static long syscall_trace_enter(struct pt_regs *regs)
 
 #define EXIT_TO_USERMODE_LOOP_FLAGS				\
 	(_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_UPROBE |	\
-	 _TIF_NEED_RESCHED | _TIF_USER_RETURN_NOTIFY)
+	 _TIF_NEED_RESCHED | _TIF_USER_RETURN_NOTIFY | 		\
+	 _TIF_RUN_SYSCALL)
 
 static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 {
+	struct ptrace_run_syscall_args *syscall_args;
+
 	/*
 	 * In order to return to user mode, we need to have IRQs off with
 	 * none of _TIF_SIGPENDING, _TIF_NOTIFY_RESUME, _TIF_USER_RETURN_NOTIFY,
@@ -162,6 +165,13 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 
 		if (cached_flags & _TIF_USER_RETURN_NOTIFY)
 			fire_user_return_notifiers();
+
+		if (cached_flags & _TIF_RUN_SYSCALL) {
+			syscall_args = current->ptrace_run_syscall_args;
+			printk("should run syscall %d\n", syscall_args->nr);
+			syscall_args->res = 42;
+			clear_thread_flag(TIF_RUN_SYSCALL);
+		}
 
 		/* Disable IRQs and retry */
 		local_irq_disable();

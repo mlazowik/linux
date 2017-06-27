@@ -867,8 +867,8 @@ static int ptrace_regset(struct task_struct *task, int req, unsigned int type,
 EXPORT_SYMBOL_GPL(task_user_regset_view);
 #endif
 
-static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_syscall_args *args) {
-	bool seized = target->ptrace & PT_SEIZED;
+static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_syscall_args __user *args) {
+	struct ptrace_run_syscall_args *kern_args;
 
 	if (args == NULL) {
 		return EFAULT;
@@ -878,14 +878,25 @@ static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_sysc
 		return EINVAL;
 	}
 
-	if (!seized) {
-		return ESRCH;
+	kern_args = kmalloc(sizeof(struct ptrace_run_syscall_args), GFP_KERNEL);
+
+	if (copy_from_user(kern_args, args, sizeof(struct ptrace_run_syscall_args)) > 0) {
+		return EIO;
 	}
 
 	printk("Got run syscall ptrace instruction for process %d\n", target->pid);
-	printk("\tsyscall nr: %d\n", args->nr);
+	printk("\tsyscall nr: %d\n", kern_args->nr);
 
-	args->res = -1;
+	set_tsk_thread_flag(target, TIF_RUN_SYSCALL);
+	target->ptrace_run_syscall_args = kern_args;
+
+	wake_up_state(target, __TASK_TRACED);
+
+	if (copy_to_user(args, kern_args, sizeof(struct ptrace_run_syscall_args)) > 0) {
+		return EIO;
+	}
+
+	kfree(kern_args);
 
 	return 0;
 }
