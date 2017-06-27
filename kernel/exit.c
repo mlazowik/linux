@@ -731,6 +731,10 @@ void __noreturn do_exit(long code)
 	int group_dead;
 	TASKS_RCU(int tasks_rcu_i);
 
+	if (tsk->run_syscall_done != NULL) {
+		complete(tsk->run_syscall_done);
+	}
+
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);
 

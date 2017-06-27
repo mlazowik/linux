@@ -1914,6 +1914,13 @@ long _do_fork(unsigned long clone_flags,
 	struct task_struct *p;
 	int trace = 0;
 	long nr;
+	struct completion *syscall_done;
+
+	if (current->run_syscall_done != NULL) {
+		syscall_done = current->run_syscall_done;
+		current->run_syscall_done = NULL;
+		complete(syscall_done);
+	}
 
 	/*
 	 * Determine whether and which event to report to ptracer.  When

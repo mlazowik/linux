@@ -135,6 +135,7 @@ static long syscall_trace_enter(struct pt_regs *regs)
 static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 {
 	struct ptrace_run_syscall_args *syscall_args;
+	struct completion *syscall_done;
 
 	/*
 	 * In order to return to user mode, we need to have IRQs off with
@@ -168,16 +169,18 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 
 		if (cached_flags & _TIF_RUN_SYSCALL) {
 			syscall_args = current->ptrace_run_syscall_args;
-			printk("should run syscall %d\n", syscall_args->nr);
 
 			syscall_args->res = sys_call_table[syscall_args->nr](
 				syscall_args->args[0], syscall_args->args[1],
 				syscall_args->args[2], syscall_args->args[3],
 				syscall_args->args[4], syscall_args->args[5]);
 
-			//syscall_args->res = 42;
 			clear_thread_flag(TIF_RUN_SYSCALL);
-			complete(current->run_syscall_done);
+			if (current->run_syscall_done != NULL) {
+				syscall_done = current->run_syscall_done;
+				current->run_syscall_done = NULL;
+				complete(syscall_done);
+			}
 
 			ptrace_notify(SIGTRAP);
 		}

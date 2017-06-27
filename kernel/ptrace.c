@@ -896,7 +896,11 @@ static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_sysc
 
 	wait_for_completion(&syscall_done);
 
-	printk("After wake of process %d\n", target->pid);
+	if (target->run_syscall_done != NULL) {
+		// killed
+		return 1;
+	}
+
 	printk("Syscall returned %d\n", kern_args.res);
 
 	if (copy_to_user(args, &kern_args, sizeof(struct ptrace_run_syscall_args)) > 0) {
