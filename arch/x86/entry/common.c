@@ -171,6 +171,7 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 			printk("should run syscall %d\n", syscall_args->nr);
 			syscall_args->res = 42;
 			clear_thread_flag(TIF_RUN_SYSCALL);
+			complete(current->run_syscall_done);
 		}
 
 		/* Disable IRQs and retry */

@@ -868,35 +868,39 @@ EXPORT_SYMBOL_GPL(task_user_regset_view);
 #endif
 
 static int ptrace_run_syscall(struct task_struct *target, struct ptrace_run_syscall_args __user *args) {
-	struct ptrace_run_syscall_args *kern_args;
+	struct ptrace_run_syscall_args kern_args;
+	struct completion syscall_done;
 
 	if (args == NULL) {
-		return EFAULT;
+		return -EFAULT;
 	}
 
 	if (args->arch != AUDIT_ARCH_X86_64) {
-		return EINVAL;
+		return -EINVAL;
 	}
 
-	kern_args = kmalloc(sizeof(struct ptrace_run_syscall_args), GFP_KERNEL);
-
-	if (copy_from_user(kern_args, args, sizeof(struct ptrace_run_syscall_args)) > 0) {
-		return EIO;
+	if (copy_from_user(&kern_args, args, sizeof(struct ptrace_run_syscall_args)) > 0) {
+		return -EFAULT;;
 	}
 
 	printk("Got run syscall ptrace instruction for process %d\n", target->pid);
-	printk("\tsyscall nr: %d\n", kern_args->nr);
+	printk("\tsyscall nr: %d\n", kern_args.nr);
 
 	set_tsk_thread_flag(target, TIF_RUN_SYSCALL);
-	target->ptrace_run_syscall_args = kern_args;
+	target->ptrace_run_syscall_args = &kern_args;
+
+	init_completion(&syscall_done);
+	target->run_syscall_done = &syscall_done;
 
 	wake_up_state(target, __TASK_TRACED);
 
-	if (copy_to_user(args, kern_args, sizeof(struct ptrace_run_syscall_args)) > 0) {
-		return EIO;
-	}
+	wait_for_completion(&syscall_done);
 
-	kfree(kern_args);
+	printk("After wake of process %d\n", target->pid);
+
+	if (copy_to_user(args, &kern_args, sizeof(struct ptrace_run_syscall_args)) > 0) {
+		return -EFAULT;;
+	}
 
 	return 0;
 }
