@@ -7,6 +7,7 @@
 #include <linux/utsname.h>
 #include <linux/slab.h>
 #include <linux/completion.h>
+#include <asm/uaccess.h>
 
 struct event {
 	struct list_head list;
@@ -15,7 +16,7 @@ struct event {
 	// TODO: refcount events
 };
 
-struct event *get_empty_event(void)
+static struct event *create_empty_event(void)
 {
 	struct event *event;
 	event = kmalloc(sizeof (struct event), GFP_KERNEL);
@@ -30,34 +31,52 @@ struct event_stream {
 	struct list_head events;
 };
 
-struct list_head event_streams;
+LIST_HEAD(event_streams);
+
+static struct event_stream *create_stream(void)
+{
+	struct event_stream *stream;
+	stream = kmalloc(sizeof (struct event_stream), GFP_KERNEL);
+	if (!stream) return ERR_PTR(-ENOMEM);
+	INIT_LIST_HEAD(&stream->list);
+	INIT_LIST_HEAD(&stream->events);
+	list_add_tail(&stream->list, &event_streams);
+	return stream;
+}
+
+void add_event(struct procmon_event *p_event)
+{
+	struct event *event, *empty;
+	struct event_stream *stream;
+	struct list_head *pos;
+	
+	list_for_each(pos, &event_streams) {
+		stream = list_entry(pos, struct event_stream, list);
+		empty = create_empty_event();
+		list_add_tail(&empty->list, &stream->events);
+		event = list_entry(empty->list.prev, struct event, list);
+		event->p_event = *p_event;
+		complete_all(&event->happened);
+	}
+}
 
 static int procmon_open(struct inode *inode, struct file *file)
 {
 	struct event_stream *stream;
-	struct event *dummy;
+	struct event *empty;
 
 	printk("procmon: open");
 
-	stream = kmalloc(sizeof (struct event_stream), GFP_KERNEL);
+	stream = create_stream();
 	if (!stream) {
 		return -ENOMEM;
 	}
 	
 	file->private_data = stream;
 	
-	INIT_LIST_HEAD(&stream->events);
-
-	dummy = get_empty_event();
-	if (!dummy) return -ENOMEM;
-	list_add_tail(&dummy->list, &stream->events);
-
-	strcpy(dummy->p_event.comm, "Test");
-	complete_all(&dummy->happened);
-	
-	dummy = get_empty_event();
-	if (!dummy) return -ENOMEM;
-	list_add_tail(&dummy->list, &stream->events);
+	empty = create_empty_event();
+	if (!empty) return -ENOMEM;
+	list_add_tail(&empty->list, &stream->events);
 
 	return 0;
 }
@@ -67,16 +86,19 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 	struct event_stream *stream;
 	struct event *event;
 	ssize_t ret;
+	int not_written;
+
+	if (size < sizeof (struct procmon_event)) {
+		printk("procmon: can't fit procmon_event in %d bytes\n", size);
+		return -EINVAL;
+	}
 
 	printk("procmon: read\n");
 
 	stream = file->private_data;
 
-	if (list_empty(&stream->events)) {
-		printk("procmon: list empty\n");
-		return 0;
-	}
-
+	// assert events list nonempty
+	
 	event = list_first_entry(&stream->events, struct event, list);
 
 	if (wait_for_completion_killable(&event->happened) != 0) {
@@ -85,9 +107,12 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 
 	printk("procmon: writing %s\n", event->p_event.comm);
 	ret = sprintf(buf, "%s\n", event->p_event.comm);
+
+	not_written = copy_to_user(buf, &event->p_event, sizeof (struct procmon_event));
+
 	list_del(&event->list);
 	kfree(event);
-	return ret;
+	return (sizeof (struct procmon_event) - not_written);
 }
 
 static int procmon_release(struct inode *inode, struct file *file)
@@ -105,6 +130,7 @@ static int procmon_release(struct inode *inode, struct file *file)
 		kfree(event);
 	}
 
+	list_del(&stream->list);
 	kfree(stream);
 
 	return 0;

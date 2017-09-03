@@ -54,6 +54,7 @@
 #include <linux/writeback.h>
 #include <linux/shm.h>
 #include <linux/kcov.h>
+#include <linux/procmon.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -729,7 +730,24 @@ void __noreturn do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
+	struct procmon_event event;
+	const struct cred *cred;
 	TASKS_RCU(int tasks_rcu_i);
+
+	cred = current_cred();
+
+	event.type = PROCMON_EVENT_EXIT;
+	event.tid = current->pid;
+	event.pid = current->pid;
+	event.ppid = task_ppid_nr(current);
+	event.uid = cred->uid.val;
+	event.euid = cred->euid.val;
+	event.suid = cred->suid.val;
+	event.fsuid = cred->fsuid.val;
+	event.status = 42 << 8;
+	strcpy(event.comm, current->comm);
+
+	add_event(&event);
 
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);

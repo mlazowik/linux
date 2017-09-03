@@ -27,4 +27,6 @@ struct procmon_event {
     char comm[128];
 };
 
+void add_event(struct procmon_event *p_event);
+
 #endif
