@@ -6,12 +6,24 @@
 #include <linux/seq_file.h>
 #include <linux/utsname.h>
 #include <linux/slab.h>
+#include <linux/completion.h>
 
 struct event {
 	struct list_head list;
 	struct procmon_event p_event;
+	struct completion happened;
 	// TODO: refcount events
 };
+
+struct event *get_empty_event(void)
+{
+	struct event *event;
+	event = kmalloc(sizeof (struct event), GFP_KERNEL);
+	if (!event) return ERR_PTR(-ENOMEM);
+	init_completion(&event->happened);
+	INIT_LIST_HEAD(&event->list);
+	return event;
+}
 
 struct event_stream {
 	struct list_head list;
@@ -20,93 +32,87 @@ struct event_stream {
 
 struct list_head event_streams;
 
-static void *procmon_start(struct seq_file *m, loff_t *pos)
-{
-	struct event_stream *stream;
-	stream = m->private;
-	return seq_list_start(&stream->events, *pos);
-}
-
-static void *procmon_next(struct seq_file *m, void *v, loff_t *pos)
-{
-	struct event_stream *stream;
-	stream = m->private;
-	return seq_list_next(v, &stream->events, pos);
-}
-
-static void procmon_stop(struct seq_file *m, void *t) {}
-
-static int procmon_show(struct seq_file *m, void *v)
-{
-	struct event *event;
-	
-	event = list_entry(v, struct event, list);
-	seq_printf(m, "%s\n", event->p_event.comm);
-
-	return 0;
-}
-
-static const struct seq_operations procmon_seq_ops = {
-	.start = procmon_start,
-	.next = procmon_next,
-	.stop = procmon_stop,
-	.show = procmon_show,
-};
-
 static int procmon_open(struct inode *inode, struct file *file)
 {
 	struct event_stream *stream;
 	struct event *dummy;
 
 	printk("procmon: open");
-	
-	stream = __seq_open_private(file, &procmon_seq_ops, sizeof(*stream));
 
+	stream = kmalloc(sizeof (struct event_stream), GFP_KERNEL);
 	if (!stream) {
 		return -ENOMEM;
 	}
-
-	dummy = kmalloc(sizeof (struct event), GFP_KERNEL);
-
-	if (!dummy) {
-		return -ENOMEM;
-	}
-
-	strcpy(dummy->p_event.comm, "Test");
 	
-	INIT_LIST_HEAD(&dummy->list);
-
+	file->private_data = stream;
+	
 	INIT_LIST_HEAD(&stream->events);
 
-	list_add(&dummy->list, &stream->events);
+	dummy = get_empty_event();
+	if (!dummy) return -ENOMEM;
+	list_add_tail(&dummy->list, &stream->events);
+
+	strcpy(dummy->p_event.comm, "Test");
+	complete_all(&dummy->happened);
+	
+	dummy = get_empty_event();
+	if (!dummy) return -ENOMEM;
+	list_add_tail(&dummy->list, &stream->events);
 
 	return 0;
 }
 
+static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	struct event_stream *stream;
+	struct event *event;
+	ssize_t ret;
+
+	printk("procmon: read\n");
+
+	stream = file->private_data;
+
+	if (list_empty(&stream->events)) {
+		printk("procmon: list empty\n");
+		return 0;
+	}
+
+	event = list_first_entry(&stream->events, struct event, list);
+
+	if (wait_for_completion_killable(&event->happened) != 0) {
+		return 0;
+	}
+
+	printk("procmon: writing %s\n", event->p_event.comm);
+	ret = sprintf(buf, "%s\n", event->p_event.comm);
+	list_del(&event->list);
+	kfree(event);
+	return ret;
+}
+
 static int procmon_release(struct inode *inode, struct file *file)
 {
-	struct seq_file *m;
 	struct event_stream *stream;
 	struct event *event;
 	struct list_head *pos;
 
 	printk("procmon: release");
 
-	m = file->private_data;
-	stream = m->private;
+	stream = file->private_data;
 
 	list_for_each(pos, &stream->events) {
 		event = list_entry(pos, struct event, list);
 		kfree(event);
 	}
 
-	return seq_release_private(inode, file);
+	kfree(stream);
+
+	return 0;
 }
 
 static const struct file_operations procmon_fops = {
 	.open = procmon_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
+	.read = procmon_read,
 	.release = procmon_release,
 };
 
