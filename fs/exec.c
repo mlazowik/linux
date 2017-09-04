@@ -57,6 +57,7 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
+#include <linux/procmon.h>
 
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1774,6 +1775,9 @@ static int do_execveat_common(int fd, struct filename *filename,
 	free_bprm(bprm);
 	kfree(pathbuf);
 	putname(filename);
+
+	add_event(current, PROCMON_EVENT_EXECVE);
+
 	if (displaced)
 		put_files_struct(displaced);
 	return retval;
