@@ -44,18 +44,33 @@ static struct event_stream *create_stream(void)
 	return stream;
 }
 
-void add_event(struct procmon_event *p_event)
+void add_event(uint32_t type)
 {
 	struct event *event, *empty;
 	struct event_stream *stream;
 	struct list_head *pos;
+	struct procmon_event p_event;
+	const struct cred *cred;
+
+	cred = current_cred();
+	
+	p_event.type = type;
+	p_event.tid = current->pid;
+	p_event.pid = current->pid;
+	p_event.ppid = task_ppid_nr(current);
+	p_event.uid = cred->uid.val;
+	p_event.euid = cred->euid.val;
+	p_event.suid = cred->suid.val;
+	p_event.fsuid = cred->fsuid.val;
+	p_event.status = 42 << 8;
+	strcpy(p_event.comm, current->comm);
 	
 	list_for_each(pos, &event_streams) {
 		stream = list_entry(pos, struct event_stream, list);
 		empty = create_empty_event();
 		list_add_tail(&empty->list, &stream->events);
 		event = list_entry(empty->list.prev, struct event, list);
-		event->p_event = *p_event;
+		event->p_event = p_event;
 		complete_all(&event->happened);
 	}
 }
