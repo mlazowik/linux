@@ -27,6 +27,6 @@ struct procmon_event {
     char comm[128];
 };
 
-void add_event(uint32_t type);
+void add_event(struct task_struct *task, uint32_t type);
 
 #endif

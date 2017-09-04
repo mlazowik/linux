@@ -730,12 +730,9 @@ void __noreturn do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
-	const struct cred *cred;
 	TASKS_RCU(int tasks_rcu_i);
 
-	cred = current_cred();
-
-	add_event(PROCMON_EVENT_EXIT);
+	add_event(current, PROCMON_EVENT_EXIT);
 
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);
