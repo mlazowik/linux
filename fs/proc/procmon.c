@@ -53,7 +53,7 @@ void fill_procmon_event(struct procmon_event *p_event, uint32_t type,
 
         p_event->type = type;
         p_event->tid = task->pid;
-        p_event->pid = task->pid;
+        p_event->pid = task->tgid;
         p_event->ppid = task_ppid_nr(task);
         p_event->uid = cred->uid.val;
         p_event->euid = cred->euid.val;
@@ -156,15 +156,12 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 {
 	struct event_stream *stream;
 	struct event *event;
-	ssize_t ret;
 	int not_written;
 
 	if (size < sizeof (struct procmon_event)) {
 		printk("procmon: can't fit procmon_event in %d bytes\n", size);
 		return -EINVAL;
 	}
-
-	printk("procmon: read\n");
 
 	stream = file->private_data;
 
@@ -175,9 +172,6 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 	if (wait_for_completion_killable(&event->happened) != 0) {
 		return 0;
 	}
-
-	printk("procmon: writing %s\n", event->p_event.comm);
-	ret = sprintf(buf, "%s\n", event->p_event.comm);
 
 	not_written = copy_to_user(buf, &event->p_event, sizeof (struct procmon_event));
 
