@@ -76,6 +76,7 @@
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
+#include <linux/procmon.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1958,6 +1959,7 @@ long _do_fork(unsigned long clone_flags,
 			get_task_struct(p);
 		}
 
+		add_event(p, PROCMON_EVENT_CLONE);
 		wake_up_new_task(p);
 
 		/* forking complete and child started to run, tell ptracer */
