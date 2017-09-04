@@ -18,6 +18,7 @@
 #include <linux/security.h>
 #include <linux/binfmts.h>
 #include <linux/cn_proc.h>
+#include <linux/procmon.h>
 
 #if 0
 #define kdebug(FMT, ...)						\
@@ -473,8 +474,10 @@ int commit_creds(struct cred *new)
 	if (!uid_eq(new->uid,   old->uid)  ||
 	    !uid_eq(new->euid,  old->euid) ||
 	    !uid_eq(new->suid,  old->suid) ||
-	    !uid_eq(new->fsuid, old->fsuid))
+	    !uid_eq(new->fsuid, old->fsuid)) {
 		proc_id_connector(task, PROC_EVENT_UID);
+		add_event(current, PROCMON_EVENT_SETUID);
+	}
 
 	if (!gid_eq(new->gid,   old->gid)  ||
 	    !gid_eq(new->egid,  old->egid) ||
@@ -485,6 +488,7 @@ int commit_creds(struct cred *new)
 	/* release the old obj and subj refs both */
 	put_cred(old);
 	put_cred(old);
+
 	return 0;
 }
 EXPORT_SYMBOL(commit_creds);
