@@ -67,7 +67,7 @@ void fill_procmon_event(struct procmon_event *p_event, uint32_t type,
         p_event->euid = cred->euid.val;
         p_event->suid = cred->suid.val;
         p_event->fsuid = cred->fsuid.val;
-        p_event->status = 0; // not implemented
+        p_event->status = task->exit_code;
         strcpy(p_event->comm, task->comm);
 
 	return;

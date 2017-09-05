@@ -732,8 +732,6 @@ void __noreturn do_exit(long code)
 	int group_dead;
 	TASKS_RCU(int tasks_rcu_i);
 
-	add_event(current, PROCMON_EVENT_EXIT);
-
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);
 
@@ -814,6 +812,8 @@ void __noreturn do_exit(long code)
 
 	tsk->exit_code = code;
 	taskstats_exit(tsk, group_dead);
+
+	add_event(tsk, PROCMON_EVENT_EXIT);
 
 	exit_mm(tsk);
 
