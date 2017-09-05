@@ -13,9 +13,11 @@ struct event {
 	struct list_head list;
 	struct procmon_event p_event;
 	struct completion happened;
-	// TODO: refcount events
 };
 
+/**
+ * Creates new empty event which has not happened yet.
+ */
 static struct event *create_empty_event(void)
 {
 	struct event *event;
@@ -33,6 +35,9 @@ struct event_stream {
 
 LIST_HEAD(event_streams);
 
+/**
+ * Creates new event stream and adds it to the global event_streams list.
+ */
 static struct event_stream *create_stream(void)
 {
 	struct event_stream *stream;
@@ -44,6 +49,9 @@ static struct event_stream *create_stream(void)
 	return stream;
 }
 
+/**
+ * Fills procmon_event struct with given type and task data.
+ */
 void fill_procmon_event(struct procmon_event *p_event, uint32_t type,
 	struct task_struct *task)
 {
@@ -66,7 +74,7 @@ void fill_procmon_event(struct procmon_event *p_event, uint32_t type,
 }
 
 /**
- * Appends p_event at the end of stream.
+ * Appends procmon_event at the end of the stream.
  *
  * *p_event is copied.
  */
@@ -130,6 +138,10 @@ static int add_init_events(struct event_stream *stream, struct task_struct *task
 	return 0;
 }
 
+/**
+ * Creates new event stream, attaches it to the given file struct and fills it
+ * with one placeholder for a future event.
+ */
 static int procmon_open(struct inode *inode, struct file *file)
 {
 	struct event_stream *stream;
@@ -152,6 +164,12 @@ static int procmon_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+/**
+ * Returns one event from the beggining of the events stream associated with
+ * the given file struct and removes it.
+ *
+ * Waits if the event has not happened yet.
+ */
 static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 {
 	struct event_stream *stream;
@@ -165,8 +183,6 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 
 	stream = file->private_data;
 
-	// assert events list nonempty
-	
 	event = list_first_entry(&stream->events, struct event, list);
 
 	if (wait_for_completion_killable(&event->happened) != 0) {
@@ -180,6 +196,9 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 	return (sizeof (struct procmon_event) - not_written);
 }
 
+/**
+ * Frees not read events and the stream associated with the given file struct.
+ */
 static int procmon_release(struct inode *inode, struct file *file)
 {
 	struct event_stream *stream;
