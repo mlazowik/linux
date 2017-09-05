@@ -177,7 +177,7 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 	int not_written;
 
 	if (size < sizeof (struct procmon_event)) {
-		printk("procmon: can't fit procmon_event in %d bytes\n", size);
+		printk("procmon: event buffer too small\n");
 		return -EINVAL;
 	}
 
