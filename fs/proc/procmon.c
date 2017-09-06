@@ -22,7 +22,7 @@ static struct event *create_empty_event(void)
 {
 	struct event *event;
 	event = kmalloc(sizeof (struct event), GFP_KERNEL);
-	if (!event) return ERR_PTR(-ENOMEM);
+	if (!event) return NULL;
 	init_completion(&event->happened);
 	INIT_LIST_HEAD(&event->list);
 	return event;
@@ -36,16 +36,15 @@ struct event_stream {
 LIST_HEAD(event_streams);
 
 /**
- * Creates new event stream and adds it to the global event_streams list.
+ * Creates new event stream.
  */
 static struct event_stream *create_stream(void)
 {
 	struct event_stream *stream;
 	stream = kmalloc(sizeof (struct event_stream), GFP_KERNEL);
-	if (!stream) return ERR_PTR(-ENOMEM);
+	if (!stream) return NULL;
 	INIT_LIST_HEAD(&stream->list);
 	INIT_LIST_HEAD(&stream->events);
-	list_add_tail(&stream->list, &event_streams);
 	return stream;
 }
 
@@ -78,18 +77,25 @@ void fill_procmon_event(struct procmon_event *p_event, uint32_t type,
  *
  * *p_event is copied.
  */
-static int append_event(struct event_stream *stream, struct procmon_event *p_event) 
+static void append_event(struct event_stream *stream, struct procmon_event *p_event) 
 {
 	struct event *event, *empty;
 
 	empty = create_empty_event();
-	if (!empty) return -ENOMEM;
+	if (!empty) {
+		event = list_last_entry(&stream->events, struct event, list);
+		event->p_event.type = PROCMON_EVENT_LOST;
+		return;
+	}
 	list_add_tail(&empty->list, &stream->events);
 	event = list_entry(empty->list.prev, struct event, list);
-	event->p_event = *p_event;
-	complete_all(&event->happened);
 
-	return 0;
+	if (event->p_event.type == PROCMON_EVENT_LOST) {
+		append_event(stream, p_event);
+	} else {
+		event->p_event = *p_event;
+	}
+	complete_all(&event->happened);
 }
 
 /**
@@ -105,6 +111,7 @@ void add_event(struct task_struct *task, uint32_t type)
 
 	list_for_each(pos, &event_streams) {
 		stream = list_entry(pos, struct event_stream, list);
+		if (list_empty(&stream->events)) return;
 		append_event(stream, &p_event);
 	}
 }
@@ -115,27 +122,21 @@ void add_event(struct task_struct *task, uint32_t type)
  *
  * Ignores init process.
  */
-static int add_init_events(struct event_stream *stream, struct task_struct *task)
+static void add_init_events(struct event_stream *stream, struct task_struct *task)
 {
 	struct task_struct *child;
 	struct list_head *list;
 	struct procmon_event p_event;
-	int ret;
 
 	if (task->pid != 0) {
 		fill_procmon_event(&p_event, PROCMON_EVENT_EXISTING, task);
-	
-		ret = append_event(stream, &p_event);
-		if (ret != 0) return ret;
+		append_event(stream, &p_event);
 	}
 	
 	list_for_each(list, &task->children) {
 		child = list_entry(list, struct task_struct, sibling);
-		ret = add_init_events(stream, child);
-		if (ret != 0) return ret;
+		add_init_events(stream, child);
 	}
-
-	return 0;
 }
 
 /**
@@ -146,7 +147,6 @@ static int procmon_open(struct inode *inode, struct file *file)
 {
 	struct event_stream *stream;
 	struct event *empty;
-	int ret;
 
 	printk("procmon: open");
 
@@ -154,14 +154,40 @@ static int procmon_open(struct inode *inode, struct file *file)
 	if (!stream) return -ENOMEM;
 	
 	file->private_data = stream;
-	
-	empty = create_empty_event();
-	if (!empty) return -ENOMEM;
-	list_add_tail(&empty->list, &stream->events);
 
-	ret = add_init_events(stream, &init_task);
+	empty = create_empty_event();
+	if (!empty) {
+		kfree(stream);
+		return -ENOMEM;
+	}
+	list_add_tail(&empty->list, &stream->events);
+	
+	add_init_events(stream, &init_task);
+	
+	list_add_tail(&stream->list, &event_streams);
 	
 	return 0;
+}
+
+/**
+ * Frees not read events and the stream associated with the given file struct.
+ */
+static void cleanup(struct file *file) {
+	struct event_stream *stream;
+        struct event *event;
+        struct list_head *pos;
+
+        printk("procmon: cleanup");
+
+        stream = file->private_data;
+        list_del(&stream->list);
+
+        list_for_each(pos, &stream->events) {
+                event = list_entry(pos, struct event, list);
+                kfree(event);
+        }
+
+        kfree(stream);
 }
 
 /**
@@ -196,26 +222,11 @@ static ssize_t procmon_read(struct file *file, char __user *buf, size_t size, lo
 	return (sizeof (struct procmon_event) - not_written);
 }
 
-/**
- * Frees not read events and the stream associated with the given file struct.
- */
 static int procmon_release(struct inode *inode, struct file *file)
 {
-	struct event_stream *stream;
-	struct event *event;
-	struct list_head *pos;
-
 	printk("procmon: release");
 
-	stream = file->private_data;
-
-	list_for_each(pos, &stream->events) {
-		event = list_entry(pos, struct event, list);
-		kfree(event);
-	}
-
-	list_del(&stream->list);
-	kfree(stream);
+	cleanup(file);
 
 	return 0;
 }
